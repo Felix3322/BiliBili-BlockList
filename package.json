@@ -1,0 +1,8 @@
+{
+  "name": "bilibili-blocklist-userscript",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "check": "node --check Bilibili隐藏短视频.user.js && npm test"
+  }
+}
