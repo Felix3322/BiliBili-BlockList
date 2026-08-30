@@ -1,5 +1,7 @@
 # BiliBili-BlockList
 
+<img width="479" height="844" alt="image" src="https://github.com/user-attachments/assets/c599f47f-22f7-44fb-9782-e8a34b762997" />
+
 Bilibili 黑名单订阅数据与 Tampermonkey 用户脚本。
 
 ## 内容
