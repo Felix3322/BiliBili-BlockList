@@ -36,11 +36,7 @@ test('records the CHEEMS browser crawl provenance', () => {
   assert.equal(cheems.raw_results_fetched, 1000);
 });
 
-test('userscript exposes the low-quality meme description and preserves list reasons', () => {
-  const source = fs.readFileSync(scriptPath, 'utf8');
-  assert.match(source, /^\/\/ @version\s+7\.1$/m);
-  assert.match(source, /^\/\/ @description\s+低质迷因$/m);
-
+test('userscript preserves low-quality meme rule reasons', () => {
   const parsed = engine.parseLowQualityDb(JSON.stringify(blocklist), 'repository');
   assert.equal(parsed.length, blocklist.count);
   assert.equal(parsed[0].tip, '低质迷因');

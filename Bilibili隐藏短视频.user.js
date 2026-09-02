@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bilibili隐藏短视频
 // @namespace    http://tampermonkey.net/
-// @version      7.1
-// @description  低质迷因
+// @version      7.2
+// @description  B站多页面视频卡片检测引擎，支持可选仓库订阅、UID 自动拉黑、全局例外与多种标记模式
 // @match        *://www.bilibili.com/*
 // @match        *://search.bilibili.com/*
 // @match        *://space.bilibili.com/*
@@ -86,6 +86,7 @@
         globalExceptions: 'globalExceptions',
         lowQualityDbUrls: 'lowQualityDbUrls',
         lowQualityAccounts: 'lowQualityAccounts',
+        lowQualityDbSourceStats: 'lowQualityDbSourceStats',
         lowQualityDbLastUpdate: 'lowQualityDbLastUpdate',
         repoSubscriptionEnabled: 'repoSubscriptionEnabled',
         followedAccountExceptions: 'followedAccountExceptions',
@@ -106,6 +107,8 @@
             convertDurationToSeconds,
             parseTypedValue,
             parseLowQualityDb,
+            normalizeSubscriptionUrls,
+            dedupeLowQualityAccounts,
         };
         return;
     }
@@ -148,6 +151,33 @@
         return String(text ?? '').replace(/\s+/g, '').trim();
     }
 
+    function normalizeSubscriptionUrls(text) {
+        const values = Array.isArray(text) ? text : String(text ?? '').split(/\r?\n/);
+        const urls = [];
+        for (const value of values) {
+            const candidate = String(value ?? '').trim();
+            if (!candidate) continue;
+            try {
+                const parsed = new URL(candidate);
+                if (!['http:', 'https:'].includes(parsed.protocol)) continue;
+                const normalized = parsed.href;
+                if (!urls.includes(normalized)) urls.push(normalized);
+            } catch (_) {}
+        }
+        return urls;
+    }
+
+    function dedupeLowQualityAccounts(items, includeSource = false) {
+        const dedup = new Map();
+        for (const item of items) {
+            if (!item || !item.type || !item.value) continue;
+            const sourceKey = includeSource ? `${item.source || ''}:` : '';
+            const key = `${sourceKey}${item.type}:${item.value}`;
+            if (!dedup.has(key)) dedup.set(key, item);
+        }
+        return Array.from(dedup.values());
+    }
+
     let minDuration = loadInt(KEY.minDuration, 300);
     let debounceDelay = loadInt(KEY.debounceDelay, 500);
     let isActive = loadBool(KEY.isActive, true);
@@ -156,8 +186,10 @@
     let detectedElements = new Map();
     let customRules = loadJson(KEY.customRules, []);
     let globalExceptions = loadJson(KEY.globalExceptions, []);
-    let lowQualityDbUrls = loadJson(KEY.lowQualityDbUrls, []).filter((url) => url !== DEFAULT_BLOCKLIST_URL);
+    let lowQualityDbUrls = normalizeSubscriptionUrls(loadJson(KEY.lowQualityDbUrls, []))
+        .filter((url) => url !== DEFAULT_BLOCKLIST_URL);
     let lowQualityAccounts = loadJson(KEY.lowQualityAccounts, []);
+    let lowQualityDbSourceStats = loadJson(KEY.lowQualityDbSourceStats, {});
     let repoSubscriptionEnabled = loadBool(KEY.repoSubscriptionEnabled, false);
     let followedAccountExceptions = loadJson(KEY.followedAccountExceptions, []);
     let lowQualityDbLastUpdate = localStorage.getItem(KEY.lowQualityDbLastUpdate) || '从未更新';
@@ -200,7 +232,7 @@
         panelRoot = panelHost.attachShadow({ mode: 'open' });
         panelRoot.innerHTML = `
             <style>
-                :host{color-scheme:light}*{box-sizing:border-box}button,input,select{font:inherit}
+                :host{color-scheme:light}*{box-sizing:border-box}button,input,select,textarea{font:inherit}
                 button{border:0;cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}
                 #launcher{display:flex;align-items:center;gap:9px;height:44px;padding:0 15px;border-radius:15px;background:#101828;color:#fff;box-shadow:0 12px 32px #1018283d;cursor:pointer;user-select:none;font-size:13px;font-weight:700}
                 #launcher i{display:grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:8px;background:#fb7299;font-style:normal;font-size:11px}
@@ -211,7 +243,7 @@
                 main{overflow:auto;padding:12px}section[data-page]{display:none;gap:10px;flex-direction:column}section[data-page].active{display:flex}
                 .hero{padding:16px;border-radius:16px;background:linear-gradient(135deg,#101828,#344054);color:#fff}.hero-row{display:flex;justify-content:space-between;align-items:center}.hero strong{font-size:22px}.hero small{color:#d0d5dd}
                 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.stat,.card{padding:13px;border:1px solid #eaecf0;border-radius:14px;background:#fff}.stat b{display:block;font-size:18px}.stat span,.muted{color:#667085;font-size:11px}
-                .card h3{margin:0 0 10px;font-size:13px}.row{display:flex;align-items:center;gap:8px}.row.wrap{flex-wrap:wrap}.row.between{justify-content:space-between}.stack{display:grid;gap:8px}.field{display:grid;gap:4px;color:#475467;font-size:12px}.field input,.field select,#lowQualityDbUrlInput{width:100%;height:36px;padding:0 10px;border:1px solid #d0d5dd;border-radius:9px;background:#fff;color:#101828;outline:none}.field input:focus,#lowQualityDbUrlInput:focus{border-color:#fb7299;box-shadow:0 0 0 3px #fb72991c}
+                .card h3{margin:0 0 10px;font-size:13px}.row{display:flex;align-items:center;gap:8px}.row.wrap{flex-wrap:wrap}.row.between{justify-content:space-between}.stack{display:grid;gap:8px}.field{display:grid;gap:4px;color:#475467;font-size:12px}.field input,.field select,#lowQualityDbUrlInput{width:100%;padding:0 10px;border:1px solid #d0d5dd;border-radius:9px;background:#fff;color:#101828;outline:none}.field input,.field select{height:36px}#lowQualityDbUrlInput{min-height:76px;padding:9px 10px;resize:vertical;line-height:1.45}.field input:focus,#lowQualityDbUrlInput:focus{border-color:#fb7299;box-shadow:0 0 0 3px #fb72991c}
                 .switch{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;font-size:12px}.switch input{appearance:none;width:36px;height:20px;border-radius:20px;background:#d0d5dd;position:relative;transition:.15s}.switch input:after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:.15s}.switch input:checked{background:#fb7299}.switch input:checked:after{left:19px}
                 .primary,.secondary,.danger{min-height:34px;padding:0 12px;border-radius:9px;font-size:12px;font-weight:650}.primary{background:#fb7299;color:#fff}.secondary{background:#f2f4f7;color:#344054}.danger{background:#fff1f3;color:#c01048}.notice{padding:10px;border-radius:10px;background:#fff6ed;color:#9a3412;font-size:11px;line-height:1.55}.list{max-height:150px;overflow:auto;border-radius:10px;background:#f9fafb;padding:8px;font-size:11px;color:#475467}.list:empty:after{content:"暂无内容";color:#98a2b3}.list button{padding:3px 7px;border-radius:6px;background:#fee4e2;color:#b42318;font-size:10px}#logInfo{min-height:120px;white-space:normal;line-height:1.6}.repo-off{color:#b54708}.repo-on{color:#067647}
                 @media(max-width:520px){#controlPanel{width:calc(100vw - 20px);max-height:calc(100vh - 78px)}.stats{grid-template-columns:1fr 1fr}.stats .stat:last-child{grid-column:1/-1}}
@@ -231,7 +263,7 @@
                     </section>
                     <section data-page="subscribe">
                         <div class="card stack"><div class="row between"><div><h3 style="margin-bottom:3px">仓库名单</h3><div id="repoState" class="muted"></div></div><label class="switch"><input type="checkbox" id="repoSubscriptionEnabled" ${repoSubscriptionEnabled ? 'checked' : ''}></label></div><div class="notice">默认关闭且不会发起网络请求。开启后立即读取本仓库 blocklist.json，并在超过 12 小时时自动刷新。</div><button id="refreshLowQualityDb" class="primary">立即更新已启用订阅</button><div id="lowQualityDbInfo" class="muted"></div></div>
-                        <div class="card stack"><h3>自定义订阅</h3><div class="row"><input id="lowQualityDbUrlInput" placeholder="https://example.com/blocklist.json"><button id="addDbUrl" class="secondary">添加</button></div><div id="lowQualityDbUrlList" class="list"></div><button id="clearLowQualityDb" class="danger">清空本地名单缓存</button></div>
+                        <div class="card stack"><h3>多个屏蔽列表</h3><div class="muted">每行一个 HTTP/HTTPS 地址，可一次添加多个；各来源会并行更新、合并并按规则去重。</div><textarea id="lowQualityDbUrlInput" placeholder="https://example.com/blocklist-a.json&#10;https://example.com/blocklist-b.txt"></textarea><button id="addDbUrl" class="secondary">批量添加并更新</button><div id="lowQualityDbUrlList" class="list"></div><button id="clearLowQualityDb" class="danger">清空本地名单缓存</button></div>
                         <div class="card stack"><h3>批量拉黑</h3><div class="notice">${AUTO_BLOCK_WARNING}</div><div class="row wrap"><button id="autoBlockSubscribedAccounts" class="danger">按当前名单自动拉黑</button><button id="stopAutoBlock" class="secondary" disabled>停止</button></div><div id="autoBlockStatus" class="list"></div></div>
                     </section>
                     <section data-page="exceptions">
@@ -431,30 +463,35 @@
         runDetection();
     }
 
-    function addDbUrl() {
+    async function addDbUrl() {
         const input = ui('lowQualityDbUrlInput');
-        const url = input.value.trim();
-        if (!/^https?:\/\//i.test(url)) {
-            alert('请输入 http:// 或 https:// 开头的订阅地址。');
+        const urls = normalizeSubscriptionUrls(input.value)
+            .filter((url) => url !== DEFAULT_BLOCKLIST_URL);
+        if (!urls.length) {
+            alert('没有找到有效地址。请每行输入一个 http:// 或 https:// 开头的订阅地址。');
             return;
         }
-        if (!lowQualityDbUrls.includes(url)) {
-            lowQualityDbUrls.push(url);
-            saveJson(KEY.lowQualityDbUrls, lowQualityDbUrls);
-        }
+        const previousCount = lowQualityDbUrls.length;
+        lowQualityDbUrls = Array.from(new Set([...lowQualityDbUrls, ...urls]));
+        saveJson(KEY.lowQualityDbUrls, lowQualityDbUrls);
         input.value = '';
         refreshPanelLists();
-        refreshLowQualityDb(true);
+        if (lowQualityDbUrls.length === previousCount) {
+            alert('这些订阅地址已经存在。');
+            return;
+        }
+        await refreshLowQualityDb(true);
     }
 
     function getActiveDbUrls() {
-        return repoSubscriptionEnabled
+        return Array.from(new Set(repoSubscriptionEnabled
             ? [DEFAULT_BLOCKLIST_URL, ...lowQualityDbUrls]
-            : [...lowQualityDbUrls];
+            : [...lowQualityDbUrls]));
     }
 
     function getActiveLowQualityAccounts() {
-        return lowQualityAccounts.filter((item) => item.source !== DEFAULT_BLOCKLIST_URL || repoSubscriptionEnabled);
+        const activeUrls = new Set(getActiveDbUrls());
+        return dedupeLowQualityAccounts(lowQualityAccounts.filter((item) => activeUrls.has(item.source)));
     }
 
     async function toggleRepoSubscription() {
@@ -466,15 +503,22 @@
     }
 
     function removeDbUrl(index) {
-        lowQualityDbUrls.splice(index, 1);
+        const [removedUrl] = lowQualityDbUrls.splice(index, 1);
         saveJson(KEY.lowQualityDbUrls, lowQualityDbUrls);
+        lowQualityAccounts = lowQualityAccounts.filter((item) => item.source !== removedUrl);
+        saveJson(KEY.lowQualityAccounts, lowQualityAccounts);
+        delete lowQualityDbSourceStats[removedUrl];
+        saveJson(KEY.lowQualityDbSourceStats, lowQualityDbSourceStats);
         refreshPanelLists();
+        runDetection();
     }
 
     function clearLowQualityDb() {
         if (!confirm('确定清空本地已下载的低质账号库吗？订阅 URL 不会删除。')) return;
         lowQualityAccounts = [];
         saveJson(KEY.lowQualityAccounts, lowQualityAccounts);
+        lowQualityDbSourceStats = {};
+        saveJson(KEY.lowQualityDbSourceStats, lowQualityDbSourceStats);
         localStorage.setItem(KEY.lowQualityDbLastUpdate, '已清空');
         lowQualityDbLastUpdate = '已清空';
         refreshPanelLists();
@@ -488,41 +532,59 @@
             return { count: 0, errors: ['还没有添加订阅 URL'] };
         }
 
-        const allAccounts = [];
+        const freshAccounts = [];
         const errors = [];
 
-        for (const url of activeUrls) {
-            try {
-                const text = await fetchTextByUserscript(url);
-                const parsed = parseLowQualityDb(text, url);
-                allAccounts.push(...parsed);
-            } catch (err) {
-                errors.push(`${url}: ${err && err.message ? err.message : String(err)}`);
+        const results = await Promise.allSettled(activeUrls.map(async (url) => {
+            const text = await fetchTextByUserscript(url);
+            return { url, accounts: parseLowQualityDb(text, url) };
+        }));
+        const successfulUrls = new Set();
+        const updatedAt = new Date().toLocaleString();
+
+        results.forEach((result, index) => {
+            const url = activeUrls[index];
+            if (result.status === 'fulfilled') {
+                const parsed = result.value.accounts;
+                successfulUrls.add(url);
+                freshAccounts.push(...parsed);
+                lowQualityDbSourceStats[url] = {
+                    status: 'ok',
+                    count: dedupeLowQualityAccounts(parsed).length,
+                    lastUpdate: updatedAt,
+                    error: '',
+                };
+            } else {
+                const message = result.reason && result.reason.message ? result.reason.message : String(result.reason);
+                errors.push(`${url}: ${message}`);
+                const cachedCount = dedupeLowQualityAccounts(lowQualityAccounts.filter((item) => item.source === url)).length;
+                lowQualityDbSourceStats[url] = {
+                    status: 'error',
+                    count: cachedCount,
+                    lastUpdate: updatedAt,
+                    error: message,
+                };
             }
-        }
+        });
 
-        const dedup = new Map();
-        for (const item of allAccounts) {
-            if (!item || !item.type || !item.value) continue;
-            const key = `${item.type}:${item.value}`;
-            if (!dedup.has(key)) dedup.set(key, item);
-        }
-
-        lowQualityAccounts = Array.from(dedup.values());
+        const preservedAccounts = lowQualityAccounts.filter((item) => !successfulUrls.has(item.source));
+        lowQualityAccounts = dedupeLowQualityAccounts([...preservedAccounts, ...freshAccounts], true);
         saveJson(KEY.lowQualityAccounts, lowQualityAccounts);
-        lowQualityDbLastUpdate = new Date().toLocaleString();
+        saveJson(KEY.lowQualityDbSourceStats, lowQualityDbSourceStats);
+        lowQualityDbLastUpdate = updatedAt;
         localStorage.setItem(KEY.lowQualityDbLastUpdate, lowQualityDbLastUpdate);
         refreshPanelLists();
         runDetection();
 
+        const activeCount = getActiveLowQualityAccounts().length;
         if (showAlert) {
             const msg = errors.length
-                ? `更新完成，但有 ${errors.length} 个订阅失败。成功载入 ${lowQualityAccounts.length} 条账号规则。\n\n${errors.join('\n')}`
-                : `更新完成，载入 ${lowQualityAccounts.length} 条账号规则。`;
+                ? `更新完成，但有 ${errors.length} 个订阅失败；失败来源继续使用已有缓存。当前合并生效 ${activeCount} 条账号规则。\n\n${errors.join('\n')}`
+                : `更新完成，${activeUrls.length} 个订阅全部成功，合并生效 ${activeCount} 条账号规则。`;
             alert(msg);
         }
 
-        return { count: lowQualityAccounts.length, errors };
+        return { count: activeCount, errors };
     }
 
     function fetchTextByUserscript(url) {
@@ -676,8 +738,11 @@
         info.textContent = `启用 ${activeCount} 个来源；当前生效 ${getActiveLowQualityAccounts().length} 条（UID ${uidCount} 条）；上次更新：${lowQualityDbLastUpdate}`;
         const state = ui('repoState');
         if (state) {
+            const repoStats = lowQualityDbSourceStats[DEFAULT_BLOCKLIST_URL];
             state.className = repoSubscriptionEnabled ? 'muted repo-on' : 'muted repo-off';
-            state.textContent = repoSubscriptionEnabled ? '已启用 · 会自动刷新' : '未启用 · 不会请求仓库';
+            state.textContent = repoSubscriptionEnabled
+                ? `已启用 · ${formatDbSourceStatus(repoStats)}`
+                : '未启用 · 不会请求仓库';
         }
         const count = ui('localRuleCount');
         if (count) count.textContent = String(getActiveLowQualityAccounts().length);
@@ -824,8 +889,11 @@
         }
 
         list.innerHTML = lowQualityDbUrls.map((url, index) => `
-            <div style="display:flex;gap:6px;align-items:center;justify-content:space-between;border-bottom:1px solid #ddd;padding:3px 0;">
-                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:275px;" title="${escapeHtml(url)}">${escapeHtml(url)}</span>
+            <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;border-bottom:1px solid #ddd;padding:6px 0;">
+                <span style="min-width:0;display:grid;gap:2px;">
+                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:275px;" title="${escapeHtml(url)}">${escapeHtml(url)}</span>
+                    <small title="${escapeHtml(lowQualityDbSourceStats[url]?.error || '')}">${escapeHtml(formatDbSourceStatus(lowQualityDbSourceStats[url]))}</small>
+                </span>
                 <button data-remove-dburl="${index}">删除</button>
             </div>
         `).join('');
@@ -833,6 +901,12 @@
         list.querySelectorAll('[data-remove-dburl]').forEach((button) => {
             button.onclick = () => removeDbUrl(parseInt(button.dataset.removeDburl, 10));
         });
+    }
+
+    function formatDbSourceStatus(stats) {
+        if (!stats) return '等待首次更新';
+        if (stats.status === 'error') return `更新失败 · 沿用缓存 ${stats.count || 0} 条`;
+        return `正常 · ${stats.count || 0} 条 · ${stats.lastUpdate || '刚刚'}`;
     }
 
     function clearLogs() {

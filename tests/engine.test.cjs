@@ -66,3 +66,33 @@ test('repository network loading is opt-in in source defaults', () => {
   assert.match(source, /默认关闭且不会发起网络请求/);
   assert.doesNotMatch(source, /lowQualityDbUrls\.push\(DEFAULT_BLOCKLIST_URL\)/);
 });
+
+test('normalizes multiple subscription URLs and ignores invalid values', () => {
+  assert.deepEqual(engine.normalizeSubscriptionUrls([
+    ' https://example.com/a.json ',
+    'not-a-url',
+    'http://example.com/b.txt',
+    'https://example.com/a.json',
+    'ftp://example.com/list.txt',
+  ]), [
+    'https://example.com/a.json',
+    'http://example.com/b.txt',
+  ]);
+});
+
+test('keeps cross-source rules in cache and deduplicates the active merged view', () => {
+  const sharedA = { type: 'uid', value: '123456', source: 'https://a.example/list.json' };
+  const sharedB = { type: 'uid', value: '123456', source: 'https://b.example/list.json' };
+  assert.equal(engine.dedupeLowQualityAccounts([sharedA, sharedB], true).length, 2);
+  assert.equal(engine.dedupeLowQualityAccounts([sharedA, sharedB]).length, 1);
+});
+
+test('updates multiple subscriptions in parallel with failure isolation', () => {
+  const source = fs.readFileSync(scriptPath, 'utf8');
+  assert.match(source, /^\/\/ @version\s+7\.2$/m);
+  assert.match(source, /^\/\/ @description\s+B站多页面视频卡片检测引擎/m);
+  assert.doesNotMatch(source, /^\/\/ @description\s+低质迷因$/m);
+  assert.match(source, /Promise\.allSettled\(activeUrls\.map/);
+  assert.match(source, /失败来源继续使用已有缓存/);
+  assert.match(source, /每行一个 HTTP\/HTTPS 地址/);
+});
