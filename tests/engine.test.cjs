@@ -89,7 +89,7 @@ test('keeps cross-source rules in cache and deduplicates the active merged view'
 
 test('updates multiple subscriptions in parallel with failure isolation', () => {
   const source = fs.readFileSync(scriptPath, 'utf8');
-  assert.match(source, /^\/\/ @version\s+7\.2$/m);
+  assert.match(source, /^\/\/ @version\s+7\.3$/m);
   assert.match(source, /^\/\/ @description\s+B站多页面视频卡片检测引擎/m);
   assert.doesNotMatch(source, /^\/\/ @description\s+低质迷因$/m);
   assert.match(source, /Promise\.allSettled\(activeUrls\.map/);

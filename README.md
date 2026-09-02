@@ -7,17 +7,21 @@ Bilibili 黑名单订阅数据与 Tampermonkey 用户脚本。
 ## 内容
 
 - `blocklist.json`：昵称包含 `MEME` 或 `CHEEMS`（不区分大小写）的 Bilibili 账号 UID 合并数据，规则描述统一为“低质迷因”。
+- `author-blacklist.json`：从作者本人 Bilibili 黑名单页面读取的精确账号名规则，显示为“作者本人的黑名单”，主要是新闻融媒体。
 - `Bilibili隐藏短视频.user.js`：多页面视频卡片检测、可选黑名单订阅与 UID 自动拉黑用户脚本。
 
 当前名单包含原有的 1000 个 `MEME` 账号，以及通过已登录浏览器逐页读取 Bilibili 用户搜索页面 DOM 得到的 1000 个 `CHEEMS` 账号；合并后按 UID 去重，共 2000 个。JSON 同时提供 `uids` 和带名称、主页链接、匹配关键词及规则描述的 `accounts`。
+
+作者本人黑名单来自 `https://account.bilibili.com/account/blacklist` 的 44 页可见 DOM：页面共显示 879 条记录，按可用的精确账号名去重为 875 条。该页面条目不公开 UID 或主页链接，因此这些规则使用精确账号名匹配，不虚构 UID。
 
 ## 订阅地址
 
 ```text
 https://raw.githubusercontent.com/Felix3322/BiliBili-BlockList/main/blocklist.json
+https://raw.githubusercontent.com/Felix3322/BiliBili-BlockList/main/author-blacklist.json
 ```
 
-脚本认识这个仓库地址，但**默认关闭仓库订阅，不会在启动时下载名单**。打开控制面板的“订阅”页，显式开启“仓库名单”后才会立即读取；启用状态下，缓存超过 12 小时会自动刷新。
+脚本认识这两个仓库地址，但**默认关闭仓库订阅，不会在启动时下载名单**。打开控制面板的“订阅”页，显式开启“仓库名单”后才会同时读取；启用状态下，缓存超过 12 小时会自动刷新。
 
 “多个屏蔽列表”输入框支持每行粘贴一个 HTTP/HTTPS 订阅地址，一次添加多个来源。更新时各来源并行读取，结果按规则合并去重；界面会显示每个来源的规则数和更新状态。单个来源失败不会清空其上次成功缓存，也不会阻止其他来源更新。删除一个来源只移除该来源的数据，不影响其他订阅中的同名规则。
 
@@ -53,7 +57,7 @@ https://raw.githubusercontent.com/Felix3322/BiliBili-BlockList/main/blocklist.js
 
 ## 页面检测引擎
 
-7.1 版把不同页面的 DOM 差异拆成独立适配器，并统一输出视频卡片信息。当前覆盖：
+7.3 版把不同页面的 DOM 差异拆成独立适配器，并统一输出视频卡片信息。当前覆盖：
 
 - 首页、搜索结果与内容分区；
 - 热门页；

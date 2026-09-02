@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili隐藏短视频
 // @namespace    http://tampermonkey.net/
-// @version      7.2
+// @version      7.3
 // @description  B站多页面视频卡片检测引擎，支持可选仓库订阅、UID 自动拉黑、全局例外与多种标记模式
 // @match        *://www.bilibili.com/*
 // @match        *://search.bilibili.com/*
@@ -20,6 +20,8 @@
     'use strict';
 
     const DEFAULT_BLOCKLIST_URL = 'https://raw.githubusercontent.com/Felix3322/BiliBili-BlockList/main/blocklist.json';
+    const AUTHOR_BLOCKLIST_URL = 'https://raw.githubusercontent.com/Felix3322/BiliBili-BlockList/main/author-blacklist.json';
+    const DEFAULT_BLOCKLIST_URLS = [DEFAULT_BLOCKLIST_URL, AUTHOR_BLOCKLIST_URL];
     const RELATION_MODIFY_URL = 'https://api.bilibili.com/x/relation/modify';
     const AUTO_BLOCK_WARNING = '根据官方规定，粉丝量<1万，黑名单上限为1000；粉丝量≥1万，黑名单上限为10000。此功能可能撑满你的黑名单。';
     const AUTO_BLOCK_DELAY_MS = 180;
@@ -187,7 +189,7 @@
     let customRules = loadJson(KEY.customRules, []);
     let globalExceptions = loadJson(KEY.globalExceptions, []);
     let lowQualityDbUrls = normalizeSubscriptionUrls(loadJson(KEY.lowQualityDbUrls, []))
-        .filter((url) => url !== DEFAULT_BLOCKLIST_URL);
+        .filter((url) => !DEFAULT_BLOCKLIST_URLS.includes(url));
     let lowQualityAccounts = loadJson(KEY.lowQualityAccounts, []);
     let lowQualityDbSourceStats = loadJson(KEY.lowQualityDbSourceStats, {});
     let repoSubscriptionEnabled = loadBool(KEY.repoSubscriptionEnabled, false);
@@ -262,7 +264,7 @@
                         ].map(([id,label,on]) => `<label class="switch"><span>${label}</span><input type="checkbox" id="${id}" ${on ? 'checked' : ''}></label>`).join('')}<div class="row wrap"><button id="addCustomRule" class="secondary">添加自定义规则</button></div></div>
                     </section>
                     <section data-page="subscribe">
-                        <div class="card stack"><div class="row between"><div><h3 style="margin-bottom:3px">仓库名单</h3><div id="repoState" class="muted"></div></div><label class="switch"><input type="checkbox" id="repoSubscriptionEnabled" ${repoSubscriptionEnabled ? 'checked' : ''}></label></div><div class="notice">默认关闭且不会发起网络请求。开启后立即读取本仓库 blocklist.json，并在超过 12 小时时自动刷新。</div><button id="refreshLowQualityDb" class="primary">立即更新已启用订阅</button><div id="lowQualityDbInfo" class="muted"></div></div>
+                        <div class="card stack"><div class="row between"><div><h3 style="margin-bottom:3px">仓库名单</h3><div id="repoState" class="muted"></div></div><label class="switch"><input type="checkbox" id="repoSubscriptionEnabled" ${repoSubscriptionEnabled ? 'checked' : ''}></label></div><div class="notice">默认关闭且不会发起网络请求。开启后立即读取本仓库“低质迷因”和“作者本人的黑名单”两个来源，并在超过 12 小时时自动刷新。</div><button id="refreshLowQualityDb" class="primary">立即更新已启用订阅</button><div id="lowQualityDbInfo" class="muted"></div></div>
                         <div class="card stack"><h3>多个屏蔽列表</h3><div class="muted">每行一个 HTTP/HTTPS 地址，可一次添加多个；各来源会并行更新、合并并按规则去重。</div><textarea id="lowQualityDbUrlInput" placeholder="https://example.com/blocklist-a.json&#10;https://example.com/blocklist-b.txt"></textarea><button id="addDbUrl" class="secondary">批量添加并更新</button><div id="lowQualityDbUrlList" class="list"></div><button id="clearLowQualityDb" class="danger">清空本地名单缓存</button></div>
                         <div class="card stack"><h3>批量拉黑</h3><div class="notice">${AUTO_BLOCK_WARNING}</div><div class="row wrap"><button id="autoBlockSubscribedAccounts" class="danger">按当前名单自动拉黑</button><button id="stopAutoBlock" class="secondary" disabled>停止</button></div><div id="autoBlockStatus" class="list"></div></div>
                     </section>
@@ -466,7 +468,7 @@
     async function addDbUrl() {
         const input = ui('lowQualityDbUrlInput');
         const urls = normalizeSubscriptionUrls(input.value)
-            .filter((url) => url !== DEFAULT_BLOCKLIST_URL);
+            .filter((url) => !DEFAULT_BLOCKLIST_URLS.includes(url));
         if (!urls.length) {
             alert('没有找到有效地址。请每行输入一个 http:// 或 https:// 开头的订阅地址。');
             return;
@@ -485,7 +487,7 @@
 
     function getActiveDbUrls() {
         return Array.from(new Set(repoSubscriptionEnabled
-            ? [DEFAULT_BLOCKLIST_URL, ...lowQualityDbUrls]
+            ? [...DEFAULT_BLOCKLIST_URLS, ...lowQualityDbUrls]
             : [...lowQualityDbUrls]));
     }
 
@@ -738,10 +740,9 @@
         info.textContent = `启用 ${activeCount} 个来源；当前生效 ${getActiveLowQualityAccounts().length} 条（UID ${uidCount} 条）；上次更新：${lowQualityDbLastUpdate}`;
         const state = ui('repoState');
         if (state) {
-            const repoStats = lowQualityDbSourceStats[DEFAULT_BLOCKLIST_URL];
             state.className = repoSubscriptionEnabled ? 'muted repo-on' : 'muted repo-off';
             state.textContent = repoSubscriptionEnabled
-                ? `已启用 · ${formatDbSourceStatus(repoStats)}`
+                ? `已启用 · ${formatRepositoryStatus()}`
                 : '未启用 · 不会请求仓库';
         }
         const count = ui('localRuleCount');
@@ -907,6 +908,14 @@
         if (!stats) return '等待首次更新';
         if (stats.status === 'error') return `更新失败 · 沿用缓存 ${stats.count || 0} 条`;
         return `正常 · ${stats.count || 0} 条 · ${stats.lastUpdate || '刚刚'}`;
+    }
+
+    function formatRepositoryStatus() {
+        const stats = DEFAULT_BLOCKLIST_URLS.map((url) => lowQualityDbSourceStats[url]).filter(Boolean);
+        if (!stats.length) return `${DEFAULT_BLOCKLIST_URLS.length} 个来源等待首次更新`;
+        const successful = stats.filter((item) => item.status === 'ok').length;
+        const count = stats.reduce((sum, item) => sum + (item.count || 0), 0);
+        return `${successful}/${DEFAULT_BLOCKLIST_URLS.length} 个来源正常 · 合计 ${count} 条`;
     }
 
     function clearLogs() {
