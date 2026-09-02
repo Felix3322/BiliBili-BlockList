@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bilibili隐藏短视频
 // @namespace    http://tampermonkey.net/
-// @version      7.0
-// @description  B站多页面视频卡片检测引擎，支持可选仓库订阅、UID 自动拉黑、全局例外与多种标记模式
+// @version      7.1
+// @description  低质迷因
 // @match        *://www.bilibili.com/*
 // @match        *://search.bilibili.com/*
 // @match        *://space.bilibili.com/*
@@ -575,14 +575,14 @@
         if (typeof item === 'string' || typeof item === 'number') {
             const line = String(item).trim();
             const [mainPart, ...tipParts] = line.split('|');
-            const tip = tipParts.join('|').trim() || '订阅低质账号';
+            const tip = tipParts.join('|').trim() || '低质迷因';
             const parsed = parseTypedValue(mainPart.trim());
             if (!parsed) return null;
             return { type: parsed.type, value: parsed.value, tip, source: sourceUrl };
         }
 
         if (item && typeof item === 'object') {
-            const tip = String(item.tip || item.reason || '订阅低质账号');
+            const tip = String(item.tip || item.reason || '低质迷因');
             if (item.uid !== undefined) return { type: 'uid', value: String(item.uid).trim(), tip, source: sourceUrl };
             if (item.mid !== undefined) return { type: 'uid', value: String(item.mid).trim(), tip, source: sourceUrl };
             if (item.name !== undefined) return { type: 'upName', value: String(item.name).trim(), tip, source: sourceUrl };
@@ -1056,7 +1056,7 @@
 
     function evaluateRules(info) {
         const dbMatch = settings.warnSubscribedLowQualityAccount ? matchLowQualityDb(info) : null;
-        if (dbMatch) return dbMatch.tip || '订阅低质账号';
+        if (dbMatch) return dbMatch.tip || '低质迷因';
         if (settings.warnMarketingAccount && info.upName.includes('观察')) return '警惕营销号';
         if (settings.warnLowQualityName && (info.upName.match(/_/g) || []).length >= 2) return '小心科技区小学生低质视频';
         if (settings.warnClickbaitTitle && (info.title.match(/[!！]/g) || []).length >= 2) return '小心标题党';

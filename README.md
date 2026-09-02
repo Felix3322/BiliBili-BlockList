@@ -6,10 +6,10 @@ Bilibili 黑名单订阅数据与 Tampermonkey 用户脚本。
 
 ## 内容
 
-- `blocklist.json`：昵称包含 `MEME`（不区分大小写）的 Bilibili 账号 UID 数据。
+- `blocklist.json`：昵称包含 `MEME` 或 `CHEEMS`（不区分大小写）的 Bilibili 账号 UID 合并数据，规则描述统一为“低质迷因”。
 - `Bilibili隐藏短视频.user.js`：多页面视频卡片检测、可选黑名单订阅与 UID 自动拉黑用户脚本。
 
-当前名单由 Bilibili 用户搜索接口抓取、按 UID 去重。JSON 同时提供 `uids` 和带名称、主页链接的 `accounts`。
+当前名单包含原有的 1000 个 `MEME` 账号，以及通过已登录浏览器逐页读取 Bilibili 用户搜索页面 DOM 得到的 1000 个 `CHEEMS` 账号；合并后按 UID 去重，共 2000 个。JSON 同时提供 `uids` 和带名称、主页链接、匹配关键词及规则描述的 `accounts`。
 
 ## 订阅地址
 
@@ -51,7 +51,7 @@ https://raw.githubusercontent.com/Felix3322/BiliBili-BlockList/main/blocklist.js
 
 ## 页面检测引擎
 
-7.0 版把不同页面的 DOM 差异拆成独立适配器，并统一输出视频卡片信息。当前覆盖：
+7.1 版把不同页面的 DOM 差异拆成独立适配器，并统一输出视频卡片信息。当前覆盖：
 
 - 首页、搜索结果与内容分区；
 - 热门页；
